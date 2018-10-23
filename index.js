@@ -5,40 +5,60 @@
 const fs = require('fs');
 const proc = require('child_process');
 const util = require('util');
-const path = require('path');
+const pathModule = require('path');
 const process = require('process');
 
-const tmp = require('tmp');
+const flow = require('flow-bin');
+const prettier = require('prettier-eslint');
 
 const exec = util.promisify(proc.exec);
-const tmpName = util.promisify(tmp.tmpName);
+const execFile = util.promisify(proc.execFile);
+const readFile = util.promisify(fs.readFile);
+const writeFile = util.promisify(fs.writeFile);
 
-async function suggestFlow(testPath) {
+async function suggestFlow(path, verbose = false) {
+  const contents = (await execFile(flow, ['suggest', path], {
+    cwd: process.cwd(),
+  })).stdout;
+
+  await writeFile(path, contents);
+}
+
+async function applyPrettier(path, verbose = false) {
+  const contents = await readFile(path, 'utf-8');
+  const formatted = prettier({
+    text: contents,
+    filePath: path,
+  });
+
+  await writeFile(path, formatted);
+}
+
+async function yarnInstall(path, verbose = false) {
+  const installDepsCmd = `
+    cd ${path} &&
+    yarn install`;
+  await exec(installDepsCmd, {
+    cwd: process.cwd(),
+  });
+}
+
+async function updateWithFlow(testPath, verbose = false) {
   const isFile = fs.statSync(testPath).isFile();
 
   if (isFile) {
     if (!testPath.endsWith('.js')) return;
 
-    const relativePath = path.relative(process.cwd(), testPath);
-    console.log(`Converting ${relativePath}`);
+    const relativePath = pathModule.relative(process.cwd(), testPath);
+    if (verbose) console.log(`Converting ${relativePath}`);
 
-    const tmpFilename = await tmpName();
-
-    const convertToFlowTypesCmd = `
-      cd ${path.dirname(testPath)} &&
-      flow suggest ${testPath} > ${tmpFilename} &&
-      rm -rf ${testPath} &&
-      cp ${tmpFilename} ${testPath} &&
-      rm -rf ${tmpFilename} &&
-      prettier-eslint --write ${testPath}`;
-    await exec(convertToFlowTypesCmd, {
-      cwd: process.cwd(),
-    });
+    await suggestFlow(testPath);
+    await applyPrettier(testPath);
   } else {
     const files = fs.readdirSync(testPath);
     for (let i = 0; i < files.length; i++) {
       const filePath = `${testPath}/${files[i]}`;
-      await suggestFlow(filePath);
+      await updateWithFlow(filePath, verbose);
     }
   }
 }
@@ -46,15 +66,11 @@ async function suggestFlow(testPath) {
 async function run(path) {
   const isDirectory = fs.statSync(path).isDirectory();
   if (isDirectory) {
-    const installDepsCmd = `
-      cd ${path} &&
-      yarn install`;
-    await exec(installDepsCmd, {
-      cwd: process.cwd(),
-    });
+    await yarnInstall(path);
   }
 
-  await suggestFlow(path);
+  await updateWithFlow(path, true);
 }
 
-run(process.argv[2]);
+const pathArg = process.argv[2];
+run(pathArg);

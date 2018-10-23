@@ -19,7 +19,8 @@
     "eslint-plugin-jest": "^21.25.1",
     "eslint-plugin-prettier": "^3.0.0",
     "eslint-plugin-react": "^7.11.1",
+    "flow-bin": "^0.83.0",
     "prettier": "^1.14.3",
-    "tmp": "^0.0.33"
+    "prettier-eslint": "^8.8.2"
   }
 }
